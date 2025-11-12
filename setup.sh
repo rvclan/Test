@@ -1,134 +1,78 @@
 #!/data/data/com.termux/files/usr/bin/bash
-set -e
+# --- Termux Screenshot System Setup (EOF-free version) ---
+echo "📦 Termux ortamı hazırlanıyor..."
 
-WORKDIR="$HOME/discord_snap"
-BASHRC="$HOME/.bashrc"
-
-echo "🔧 Termux Screenshot Bot kurulumu başlıyor..."
-
+# Güncelleme ve temel paketler
 pkg update -y && pkg upgrade -y
-pkg install -y python git -y
+pkg install python -y
+pkg install termux-api -y
+termux-setup-storage
 
-echo "📁 Depolama erişimi izni gerekiyor..."
-termux-setup-storage || true
-sleep 1
+# Çalışma dizini oluştur
+BASE_DIR="$HOME/discord_snap"
+mkdir -p "$BASE_DIR"
+cd "$BASE_DIR" || exit
 
-mkdir -p "$WORKDIR"
-cd "$WORKDIR"
-
-# --- requirements.txt ---
-cat > requirements.txt <<'REQ'
-requests==2.31.0
-REQ
-
-# --- discord_screenshot.py ---
-cat > discord_screenshot.py <<'EOF'
-#!/usr/bin/env python3
-import os, time, json, requests, subprocess
-from datetime import datetime
-
-CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
-DEFAULT_CONFIG = {
-    "discord_webhook_url": "YOUR_WEBHOOK_URL_HERE",
-    "interval_seconds": 900,
-    "base_dir": "/sdcard/snapshots",
-    "send_startup_notification": True
-}
-
-def load_config():
-    if not os.path.exists(CONFIG_PATH):
-        with open(CONFIG_PATH, "w") as f: json.dump(DEFAULT_CONFIG, f, indent=2)
-        print("⚠️ config.json oluşturuldu, webhook URL ekle ve tekrar çalıştır.")
-        exit()
-    with open(CONFIG_PATH) as f: cfg = json.load(f)
-    if "YOUR_WEBHOOK_URL_HERE" in cfg["discord_webhook_url"]:
-        print("⚠️ Lütfen webhook URL'ini config.json'a yaz.")
-        exit()
-    return cfg
-
-def get_device_info():
-    try:
-        out = subprocess.check_output(["getprop","ro.product.model"]).decode().strip()
-        return out or "UnknownDevice"
-    except: return "UnknownDevice"
-
-def send_file_to_discord(webhook, path, msg):
-    for i in range(3):
-        try:
-            with open(path,"rb") as f:
-                r=requests.post(webhook,data={"content":msg},files={"file":f})
-            if r.ok: return True
-        except Exception as e: print("Gönderim hatası:",e)
-        time.sleep(2)
-    return False
-
-def send_text(webhook,msg):
-    try:
-        r=requests.post(webhook,json={"content":msg});return r.ok
-    except: return False
-
-def take_screenshot(path):
-    try:
-        subprocess.run(["screencap","-p",path],check=True)
-        return True
-    except Exception as e:
-        print("⚠️ Screencap hatası:",e)
-        return False
-
-def main():
-    cfg=load_config()
-    base=cfg["base_dir"];interval=cfg["interval_seconds"];webhook=cfg["discord_webhook_url"]
-    os.makedirs(base,exist_ok=True)
-    device=get_device_info()
-    if cfg.get("send_startup_notification"):
-        msg=f"📢 Bot started on {device} at {datetime.now().strftime('%H:%M:%S')}"
-        send_text(webhook,msg)
-    while True:
-        folder=os.path.join(base,datetime.now().strftime("%d_%m_%Y"))
-        os.makedirs(folder,exist_ok=True)
-        path=os.path.join(folder,datetime.now().strftime("shot_%H_%M_%S.png"))
-        if take_screenshot(path):
-            msg=f"📸 {datetime.now().strftime('%d-%m-%Y %H:%M:%S')} — {device}"
-            ok=send_file_to_discord(webhook,path,msg)
-            print("✅ Gönderildi" if ok else "⚠️ Gönderilemedi")
-        time.sleep(interval)
-
-if __name__=="__main__": main()
-EOF
-
-# --- config.json ---
-cat > config.json <<'CFG'
-{
-  "discord_webhook_url": "YOUR_WEBHOOK_URL_HERE",
-  "base_dir": "/sdcard/snapshots",
-  "interval_seconds": 900,
-  "send_startup_notification": true
-}
-CFG
-
-# --- Python kurulum ---
+echo "requests==2.31.0" > requirements.txt
 pip install --upgrade pip
 pip install -r requirements.txt
 
-chmod +x discord_screenshot.py
+# Python script oluşturuluyor
+cat > discord_screenshot.py <<'PY'
+import os
+import time
+import requests
+from datetime import datetime
 
-# --- Otomatik başlatma ---
-AUTOCMD="pgrep -f discord_screenshot.py > /dev/null || nohup python $WORKDIR/discord_screenshot.py > /dev/null 2>&1 &"
-if ! grep -Fq "$AUTOCMD" "$BASHRC"; then
-  echo "" >> "$BASHRC"
-  echo "# Auto-start Discord Screenshot bot" >> "$BASHRC"
-  echo "$AUTOCMD" >> "$BASHRC"
+BASE_DIR = os.path.expanduser("~/storage/pictures/discord_snaps")
+WEBHOOK_URL = "YOUR_WEBHOOK_URL_HERE"  # <-- kendi webhook'unu buraya ekle
+
+os.makedirs(BASE_DIR, exist_ok=True)
+
+def create_day_folder():
+    today = datetime.now().strftime("%d_%m_%Y")
+    path = os.path.join(BASE_DIR, today)
+    os.makedirs(path, exist_ok=True)
+    return path
+
+def save_screenshot(folder_path):
+    filename = f"shot_{datetime.now().strftime('%H_%M_%S')}.png"
+    full_path = os.path.join(folder_path, filename)
+    os.system(f"termux-screencap '{full_path}'")
+    return full_path
+
+def send_to_discord(path):
+    timestamp = datetime.now().strftime("%d-%m-%Y %H:%M:%S")
+    msg = f"📸 Screenshot taken at {timestamp}"
+    with open(path, 'rb') as f:
+        response = requests.post(WEBHOOK_URL, data={"content": msg}, files={"file": f})
+    if response.status_code == 200:
+        print(f"[+] Sent to Discord: {path}")
+    else:
+        print(f"[!] Failed to send: {response.status_code}, {response.text}")
+
+def main():
+    while True:
+        folder = create_day_folder()
+        shot = save_screenshot(folder)
+        send_to_discord(shot)
+        time.sleep(900)  # 15 dakika
+
+if __name__ == "__main__":
+    main()
+PY
+
+# .bashrc'ye otomatik başlatma ekle
+if ! grep -q "discord_screenshot.py" ~/.bashrc; then
+  echo 'pgrep -f discord_screenshot.py > /dev/null || nohup python ~/discord_snap/discord_screenshot.py > /dev/null 2>&1 &' >> ~/.bashrc
+  echo "✅ Otomatik başlatma eklendi (~/.bashrc)"
+else
+  echo "⚙️ Otomatik başlatma zaten mevcut."
 fi
 
-mkdir -p "$HOME/.termux/boot"
-cat > "$HOME/.termux/boot/autostart.sh" <<'EOF2'
-#!/data/data/com.termux/files/usr/bin/bash
-pgrep -f discord_screenshot.py > /dev/null || nohup python $HOME/discord_snap/discord_screenshot.py > /dev/null 2>&1 &
-EOF2
-chmod +x "$HOME/.termux/boot/autostart.sh"
-
 echo ""
-echo "✅ Kurulum tamamlandı!"
-echo "Webhook URL'ini config.json içine yaz: nano $WORKDIR/config.json"
-echo "Manuel başlatmak için: python $WORKDIR/discord_screenshot.py"
-echo "⏱ Varsayılan süre: 15 dakika (900 saniye)"
+echo "🚀 Kurulum tamamlandı!"
+echo "📂 Script dizini: $BASE_DIR"
+echo "💡 Şimdi kendi Discord Webhook URL’ni discord_screenshot.py içine ekle."
+echo ""
+ 
