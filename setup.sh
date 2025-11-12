@@ -1,4 +1,3 @@
-# Test
 #!/data/data/com.termux/files/usr/bin/bash
 # setup.sh - Tam otomatik kurulum (Termux)
 # Kullanım:
