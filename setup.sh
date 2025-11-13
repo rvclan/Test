@@ -1,21 +1,21 @@
 #!/data/data/com.termux/files/usr/bin/bash
 clear
-echo "📦 Watcher kurulum başlatılıyor..."
+echo "📦 Watcher kurulumu başlatılıyor..."
 sleep 1
 
-# 1️⃣ Paketleri yükle
+# 1️⃣ Gerekli paketleri yükle
 echo "🔧 Gerekli paketler yükleniyor..."
 pkg update -y && pkg upgrade -y
-pkg install -y python wget git
+pkg install -y python termux-api termux-services wget git
 pip install requests
 
-# 2️⃣ Ana dizinleri oluştur
+# 2️⃣ Dizinleri oluştur
 echo "📁 Dizinler hazırlanıyor..."
 mkdir -p ~/discord_snap
 cd ~/discord_snap
 
-# 3️⃣ Python kodunu oluştur
-echo "🧠 Python dosyası oluşturuluyor..."
+# 3️⃣ Python script oluştur
+echo "🧠 Python dosyası hazırlanıyor..."
 cat > discord_screenshot.py <<'PY'
 import os
 import time
@@ -50,7 +50,7 @@ def save_screenshot(folder_path):
     exit_code = os.system(f"su -c 'screencap -p {full_path}'")
 
     if exit_code != 0 or not os.path.exists(full_path):
-        err = f"[!] Screenshot başarısız ({datetime.now().strftime('%H:%M:%S')})"
+        err = f"[❌] Screenshot başarısız ({datetime.now().strftime('%H:%M:%S')})"
         print(err)
         send_to_discord_message(err)
         return None
@@ -92,15 +92,30 @@ cat > requirements.txt <<'REQ'
 requests
 REQ
 
-# 5️⃣ Kullanıcıya talimat göster
+# 5️⃣ Termux Service oluştur
+echo "⚙️ Termux servis dosyası oluşturuluyor..."
+mkdir -p ~/.termux/boot
+mkdir -p ~/.termux/services/watcher
+
+cat > ~/.termux/services/watcher/run <<'RUN'
+#!/data/data/com.termux/files/usr/bin/bash
+cd ~/discord_snap
+python discord_screenshot.py
+RUN
+
+chmod +x ~/.termux/services/watcher/run
+
+# 6️⃣ Kullanıcıya bilgi göster
 clear
-echo "✅ Kurulum tamamlandı!"
+echo "✅ Watcher kurulumu tamamlandı!"
 echo ""
-echo "1️⃣ Dosyalar kaydedildi: ~/discord_snap/"
-echo "2️⃣ Webhook URL'ni düzenle: ~/discord_snap/discord_screenshot.py"
-echo "3️⃣ Kurulum sonrası başlatmak için:"
-echo "   cd ~/discord_snap"
-echo "   python discord_screenshot.py"
+echo "➡️ Adımlar:"
+echo "1️⃣ Dosyalar: ~/discord_snap/"
+echo "2️⃣ Discord webhook'unu düzenle: ~/discord_snap/discord_screenshot.py"
+echo "3️⃣ Servisi başlatmak için:"
+echo "   sv-enable watcher"
+echo "   sv up watcher"
 echo ""
-echo "⚙️  Script her 15 dakikada bir ekran görüntüsü alır ve Discord’a yollar."
-echo "📩 Hata veya başlangıçta mesaj gönderimi otomatik yapılır."
+echo "4️⃣ Termux açıldığında otomatik başlaması için 'Termux:Boot' uygulamasını kur."
+echo ""
+echo "💡 Kurulum tamamlandıktan sonra 15 dakikada bir ekran görüntüsü alınacak ve Discord’a gönderilecektir."
